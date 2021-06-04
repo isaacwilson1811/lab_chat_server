@@ -14,17 +14,43 @@ const server = net.createServer( socket => {
   activeSockets.push(socket);
 
   // send a welcome message to this client and broadcast a message to all other active clients
-  socket.write(`Welcome to the chat, ${socket.userName}!`);
+  socket.write(`Welcome to the chat, ${socket.userName}`);
   broadcast(`${socket.userName} has joined the chat.`, socket);
 
-  // when server gets a message from a client, broadcast to all other active clients
+  // when server gets data event from a client....
   socket.on('data', data => {
-
+    // remove the newline character from data and name it 'input'
     let input = data.replace('\n', '');
 
-    if ( /^\/w\s/.test(input) ){
-      let arg = input.replace('/w ', '').trim();
-      console.log(`command /w [${arg}] sent from ${socket.userName}`);
+    // check for the whisper command
+    if (input === '/w'){
+      // send an example of how to use the command
+      socket.write('Whisper command expects a recipent\nexample: /w Guest666 hello, how are you?');
+    }
+    // check if input string starts with a command name folowed by a space
+    else if ( /^\/w\s/.test(input) ){
+      // destructure out the returned args from the command parsing function
+      let [sendTo, privateMessage] = parseCommand(input,'/w');
+      // server log that this command was received and parsed as such
+      serverLog(`command /w [${sendTo}] [${privateMessage}] sent from ${socket.userName}`);
+      if (sendTo === socket.userName) {
+        socket.write('Whispering to yourself is not allowed')
+        return
+      }
+      // look up the client with the 'userName' that matches 'sendTo'
+      let foundSocket = false;
+      for (let i = 0; i < activeSockets.length; i++) {
+        // if they are found, send them the private message and stop looking
+        if (activeSockets[i].userName === sendTo) {
+          activeSockets[i].write(`${socket.userName} whispers to you: ${privateMessage} `);
+          foundSocket = true;
+          break;
+        }
+      }
+      if (!foundSocket) {
+        // if they are not found, send an error
+        socket.write(`No client with the name of [${sendTo}] could be found`);
+      }
     }
     else if ( /^\/username\s/.test(input) ) {
       let arg = input.replace('/username ', '').trim();
@@ -35,7 +61,7 @@ const server = net.createServer( socket => {
       console.log(`command /kick [${arg}] sent from ${socket.userName}`);
     }
     else if ( input === '/clientlist') {
-      console.log(`/clientlist command sent from ${socket.userName}`);
+      serverLog(`/clientlist command sent from ${socket.userName}`);
     }
     else {
       broadcast(`${socket.userName} says: ${input}`, socket);
@@ -95,4 +121,15 @@ function getRandomName(){
     return name;
   }
   getRandomName();
+}
+
+// function to parse commands and return extracted args
+function parseCommand(input,cmd) {
+        // remove the command name and first space from input and call it 'textAfterCommand'
+        let textAfterCmd = input.replace(cmd+' ', '');
+        // extract the first argument by making the remaining text into an array seperated by spaces and getting the first element
+        let arg1 = textAfterCmd.split(' ')[0];
+        // get the second argument by removing the first argument from the 'textAfterCommand' string
+        let arg2 = textAfterCmd.replace(`${arg1}`, '').trim();
+        return [arg1,arg2];
 }
