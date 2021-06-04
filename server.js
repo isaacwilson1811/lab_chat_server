@@ -71,8 +71,9 @@ function broadcast(message, excludedSocket) {
 // the client process will then exit
 function endSocket(thisSocket) {
   serverLog(`Ending socket connection on remote port: ${thisSocket.remotePort}\ngoodbye ${thisSocket.userName}`);
-  activeSockets.splice ( activeSockets.findIndex ( socket => socket.remotePort === thisSocket.remotePort ), 1 );
+  let index = activeSockets.findIndex ( socket => socket.remotePort === thisSocket.remotePort );
   thisSocket.end;
+  activeSockets.splice ( index, 1 );
 }
 
 // function to create unique initial usernames
@@ -143,8 +144,7 @@ function routeCommand(input,socket) {
         usernameCommand(input,socket);
       }
       else if ( /^\/kick\s/.test(input) ) {
-        let arg = input.replace('/kick ', '').trim();
-        console.log(`command /kick [${arg}] sent from ${socket.userName}`);
+        kickCommand(input,socket);
       }
       break;
   }
@@ -206,4 +206,27 @@ function usernameCommand(input,socket) {
   else {
     socket.write('That name is already taken');
   }
+}
+
+function kickCommand(input, socket) {
+  let [kickMe, password] = parseCommand(input,'/kick',2);
+  serverLog(`command /kick [${kickMe}] [${password}] sent from ${socket.userName}`);
+  if (password === 'password'){
+    let foundSocket = false;
+    for (let i = 0; i < activeSockets.length; i++) {
+      // if they are found, send them the private message and stop looking
+      if (activeSockets[i].userName === kickMe) {
+        (activeSockets[i]).write('/kill');
+        endSocket(activeSockets[i]);
+        foundSocket = true;
+        break;
+      }
+    }
+    if (!foundSocket) {
+      // if they are not found, send an error
+      socket.write(`No client with the name of [${kickMe}] could be found`);
+    }
+    return;
+  }
+  socket.write(`incorrect password, the password is password`);
 }

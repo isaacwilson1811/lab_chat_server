@@ -13,7 +13,12 @@ const client = net.createConnection({port: port}, () => {
   });
 }).on('data', data => {
   let message = data.toString();
-  console.log(message);
+  if(message === '/kill'){
+    console.log('Goodbye');
+    process.exit(1);
+  } else {
+    console.log(message);
+  }
 }).on('end', () => {
   console.log('Goodbye');
   process.exit(1);
