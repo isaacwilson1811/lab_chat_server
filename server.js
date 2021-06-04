@@ -7,6 +7,8 @@ const fs = require('fs'), path = require('path');
 const activeSockets = [];
 // list of valid server commands
 const serverCommands = ['/w', '/username', '/kick', '/clientlist'];
+// list of taken usernames
+const claimedNames = [];
 
 // create server and event listeners
 const server = net.createServer( socket => {
@@ -24,7 +26,7 @@ const server = net.createServer( socket => {
     // remove the newline character from data and name it 'input'
     let input = data.replace('\n', '');
     // check if the input starts with a server command
-    if (isACommand(input, serverCommands)) {handleCommand(input, socket)}
+    if (isACommand(input, serverCommands)) {routeCommand(input, socket)}
     // if it's not a command, just brodcast the chat message
     else {broadcast(`${socket.userName} says: ${input}`, socket)}
   });
@@ -47,7 +49,7 @@ server.listen(port, () => {
 const logFilePath = path.join(__dirname, 'server.log');
 function serverLog(message) {
   let time = new Date();
-  let timeStamp = `${time.getFullYear()}-${(time.getMonth()+1)}-${time.getDate()} | ${time.getHours()} : ${time.getMinutes()} : ${time.getSeconds()}`;
+  let timeStamp = `${time.getFullYear()}-${(time.getMonth()+1)}-${time.getDate()} @ ${time.getHours()}:${time.getMinutes()}:${time.getSeconds()}`;
   fs.appendFile(logFilePath, `[${timeStamp}]\n${message}\n\n`, 'utf8', err => { 
     if (err) { throw err };
     console.log('server.log appended with:');
@@ -68,13 +70,12 @@ function broadcast(message, excludedSocket) {
 // function to handle removing a socket reference from the list of activeSockets, then emmiting the socket.end event.
 // the client process will then exit
 function endSocket(thisSocket) {
-  serverLog(`Ending socket connection on remote port: ${thisSocket.remotePort} -- userName: ${thisSocket.userName}`);
+  serverLog(`Ending socket connection on remote port: ${thisSocket.remotePort}\ngoodbye ${thisSocket.userName}`);
   activeSockets.splice ( activeSockets.findIndex ( socket => socket.remotePort === thisSocket.remotePort ), 1 );
   thisSocket.end;
 }
 
 // function to create unique initial usernames
-const claimedNames = [];
 function getRandomName() {
   let name = `Guest${Math.floor(Math.random()*1000)}`;
   if (!claimedNames.includes(name)) {
@@ -94,58 +95,115 @@ function isACommand(string,array) {
   return false;
 }
 
-// function to parse commands and return extracted args
-function parseCommand(input,cmd) {
+// function to parse command input and return extracted args
+function parseCommand(input,cmd,numArgs) {
+  let args = [];
   // remove the command name and first space from input and call it 'textAfterCommand'
   let textAfterCmd = input.replace(cmd+' ', '');
   // extract the first argument by making the remaining text into an array seperated by spaces and getting the first element
+  if (numArgs > 1) {
   let arg1 = textAfterCmd.split(' ')[0];
-  // get the second argument by removing the first argument from the 'textAfterCommand' string
-  let arg2 = textAfterCmd.replace(`${arg1}`, '').trim();
-  return [arg1,arg2];
+    args.push(arg1);
+      // get the second argument by removing the first argument from the 'textAfterCommand' string
+    let arg2 = textAfterCmd.replace(`${arg1}`, '').trim();
+    args.push(arg2);
+  }
+  else {
+    args.push(textAfterCmd)
+  }
+  return args;
 }
 
-// function to handle command input
-const handleCommand = (input,socket) => {
-  // check for the whisper command
-  if (input === '/w'){
-    // send an example of how to use the command
-    socket.write('Whisper command expects a recipent\nexample: /w Guest666 hello, how are you?');
-  }
-  // check if input string starts with a command name folowed by a space
-  else if ( /^\/w\s/.test(input) ){
-    // destructure out the returned args from the command parsing function
-    let [sendTo, privateMessage] = parseCommand(input,'/w');
-    // server log that this command was received and parsed as such
-    serverLog(`command /w [${sendTo}] [${privateMessage}] sent from ${socket.userName}`);
-    if (sendTo === socket.userName) {
-      socket.write('Whispering to yourself is not allowed')
-      return
+// function to handle simple command name input
+function routeCommand(input,socket) {
+  switch(input){
+    case '/w': {
+      socket.write('sends a private direct message.\nexpects a recipent and message\nexample: /w Guest666 hello, how are you?');
+      break;
     }
-    // look up the client with the 'userName' that matches 'sendTo'
-    let foundSocket = false;
-    for (let i = 0; i < activeSockets.length; i++) {
-      // if they are found, send them the private message and stop looking
-      if (activeSockets[i].userName === sendTo) {
-        activeSockets[i].write(`${socket.userName} whispers to you: ${privateMessage} `);
-        foundSocket = true;
-        break;
+    case '/username': {
+      socket.write('changes your username.\n expects a new unique name, can not contain spaces\nexample: /username CoolNewName23874934');
+      break;
+    }
+    case '/kick': {
+      socket.write('kicks a client out of the chat\n expects an active username and admin password\n example: /kick spamBot123 password');
+      break;
+    }
+    case '/clientlist': {
+      serverLog(`/clientlist command sent from ${socket.userName}`);
+      socket.write('listing all active users...');
+      clientlistCommand(socket);
+      break;
+    }
+    default:
+      if ( /^\/w\s/.test(input) ){
+        whisperCommand(input,socket);
       }
+      else if ( /^\/username\s/.test(input) ) {
+        usernameCommand(input,socket);
+      }
+      else if ( /^\/kick\s/.test(input) ) {
+        let arg = input.replace('/kick ', '').trim();
+        console.log(`command /kick [${arg}] sent from ${socket.userName}`);
+      }
+      break;
+  }
+}
+
+//    ------------------------------------------------------------- COMMANDS
+
+const whisperCommand = (input,socket) => {
+  // destructure out the returned args from the command parsing function
+  let [sendTo, privateMessage] = parseCommand(input,'/w',2);
+  // server log that this command was received and parsed as such
+  serverLog(`command /w [${sendTo}] [${privateMessage}] sent from ${socket.userName}`);
+  // when tryong to whisper to yourself
+  if (sendTo === socket.userName) {
+    socket.write('Whispering to yourself is not allowed')
+    return;
+  }
+  // look up the client with the 'userName' that matches 'sendTo'
+  let foundSocket = false;
+  for (let i = 0; i < activeSockets.length; i++) {
+    // if they are found, send them the private message and stop looking
+    if (activeSockets[i].userName === sendTo) {
+      activeSockets[i].write(`${socket.userName} whispers to you: ${privateMessage} `);
+      foundSocket = true;
+      break;
     }
-    if (!foundSocket) {
-      // if they are not found, send an error
-      socket.write(`No client with the name of [${sendTo}] could be found`);
-    }
   }
-  else if ( /^\/username\s/.test(input) ) {
-    let arg = input.replace('/username ', '').trim();
-    console.log(`command /username [${arg}] sent from ${socket.userName}`);
+  if (!foundSocket) {
+    // if they are not found, send an error
+    socket.write(`No client with the name of [${sendTo}] could be found`);
   }
-  else if ( /^\/kick\s/.test(input) ) {
-    let arg = input.replace('/kick ', '').trim();
-    console.log(`command /kick [${arg}] sent from ${socket.userName}`);
+}
+
+const clientlistCommand = (socket) => {
+  serverLog(`command /clientlist sent from ${socket.userName}`);
+  let list = '';
+  activeSockets.forEach( client => {
+    list += `${client.userName} is active on remote port: ${client.remotePort}\n`;
+  });
+  socket.write(list);
+}
+
+function usernameCommand(input,socket) {
+  let [param] = parseCommand(input,'/username',1);
+  let requestedName = param.replace(' ', '');
+  serverLog(`command /username [${requestedName}] sent from ${socket.userName}`);
+  if (requestedName === ' ') {
+    socket.write('ERROR: name can not be an empty string')
+    return;
   }
-  else if ( input === '/clientlist') {
-    serverLog(`/clientlist command sent from ${socket.userName}`);
+  if (!claimedNames.includes(requestedName)) {
+    claimedNames.push(requestedName);
+    let oldname = socket.userName;
+    socket.userName = requestedName;
+    socket.write(`you have changed your name to ${socket.userName}`);
+    broadcast(`${oldname} has changed their name to ${socket.userName}`,socket);
+    return;
+  }
+  else {
+    socket.write('That name is already taken');
   }
 }
