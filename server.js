@@ -8,6 +8,7 @@ const activeSockets = [];
 // list of valid server commands
 const serverCommands = ['/w', '/username', '/kick', '/clientlist'];
 // list of taken usernames
+// if a user leaves after changing their name, that name will be unavailable....
 const claimedNames = [];
 
 // create server and event listeners
