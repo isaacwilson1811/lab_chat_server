@@ -15,11 +15,11 @@ const client = net.createConnection({port: port}, () => {
   let message = data.toString();
   if(message === '/kill'){
     console.log('Goodbye');
-    process.exit(1);
+    process.exit(0);
   } else {
     console.log(message);
   }
 }).on('end', () => {
   console.log('Goodbye');
-  process.exit(1);
+  process.exit(0);
 });
